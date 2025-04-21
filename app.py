@@ -1,37 +1,3 @@
-from flask import Flask, request, jsonify
-import stripe
-import uuid
-import os
-
-app = Flask(__name__)
-stripe.api_key = os.environ['STRIPE_SECRET_KEY']
-PARTNER_ACCOUNT_ID = os.environ['PARTNER_ACCOUNT_ID']
-WEBHOOK_SECRET = os.environ['STRIPE_WEBHOOK_SECRET']
-
-@app.route('/create-checkout', methods=['POST'])
-def create_checkout():
-    data = request.get_json()
-    base_amount = data.get("base_amount", 10000)
-    order_id = str(uuid.uuid4())
-
-    session = stripe.checkout.Session.create(
-        payment_method_types=['card'],
-        line_items=[{
-            'price_data': {
-                'currency': 'usd',
-                'product_data': {'name': 'Shared Product'},
-                'unit_amount': base_amount,
-            },
-            'quantity': 1,
-        }],
-        mode='payment',
-        success_url='https://example.com/success',
-        cancel_url='https://example.com/cancel',
-        metadata={"order_id": order_id},
-    )
-
-    return jsonify({"checkout_url": session.url, "order_id": order_id})
-
 @app.route('/webhook', methods=['POST'])
 def webhook_received():
     payload = request.data
@@ -45,9 +11,28 @@ def webhook_received():
     if event['type'] == 'checkout.session.completed':
         session = event['data']['object']
         order_id = session['metadata']['order_id']
-        amount_received = session['amount_total']
-        half_amount = amount_received // 2
+        payment_intent_id = session['payment_intent']
 
+        # Step 1: Retrieve the PaymentIntent
+        payment_intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+
+        # Step 2: Get the charge ID from the PaymentIntent
+        charge_id = payment_intent['charges']['data'][0]['id']
+
+        # Step 3: Retrieve the balance transaction for the charge
+        charge = stripe.Charge.retrieve(charge_id)
+        balance_txn_id = charge['balance_transaction']
+        balance_txn = stripe.BalanceTransaction.retrieve(balance_txn_id)
+
+        # Step 4: Extract the actual fee
+        stripe_fee = balance_txn['fee']
+        amount_received = balance_txn['amount']  # gross amount
+        net_amount = balance_txn['net']
+
+        # Step 5: Split the actual net
+        half_amount = net_amount // 2
+
+        # Step 6: Transfer half to your partner
         stripe.Transfer.create(
             amount=half_amount,
             currency='usd',
