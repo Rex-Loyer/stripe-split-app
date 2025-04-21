@@ -1,9 +1,11 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import stripe
 import uuid
 import os
 
 app = Flask(__name__)
+CORS(app)  # <- This line enables cross-origin support (CORS)
 
 
 @app.route('/webhook', methods=['POST'])
