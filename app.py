@@ -1,3 +1,11 @@
+from flask import Flask, request, jsonify
+import stripe
+import uuid
+import os
+
+app = Flask(__name__)
+
+
 @app.route('/webhook', methods=['POST'])
 def webhook_received():
     payload = request.data
